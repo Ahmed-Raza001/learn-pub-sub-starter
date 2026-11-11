@@ -23,19 +23,30 @@ func main() {
 
 	fmt.Println("Successfully connected to RabbitMQ!")
 
-	// Declare and bind durable game_logs queue
-	gameLogCh, _, err := pubsub.DeclareAndBind(
+	err = pubsub.SubscribeGob(
 		conn,
-		"peril_topic",
+		routing.ExchangePerilTopic,
 		"game_logs",
-		"game_logs.*",
+		routing.GameLogSlug+".*",
 		pubsub.SimpleQueueDurable,
+		func(gameLog routing.GameLog) pubsub.AckType {
+			defer fmt.Print("> ")
+
+			err := gamelogic.WriteLog(gameLog)
+			if err != nil {
+				fmt.Println("Failed to write game log:", err)
+				return pubsub.NackRequeue
+			}
+
+			fmt.Println("Game log saved:", gameLog.Message)
+			return pubsub.Ack
+		},
 	)
+
 	if err != nil {
-		fmt.Println("Failed to declare game_logs queue:", err)
+		fmt.Println("Failed to subscribe to game logs:", err)
 		return
 	}
-	defer gameLogCh.Close()
 
 	// Create channel
 	ch, err := conn.Channel()
